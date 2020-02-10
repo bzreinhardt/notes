@@ -20,6 +20,7 @@ from datetime import datetime
      ...: ]
 '''
 #r= requests.put("https://api.myjson.com/bins/5yjbk", json=test2)
+# Possible visualization https://codepen.io/mcaule/pen/QOapBZ
 
 if __name__=="__main__":
     path = "/Users/zaaron/Downloads/Notes_Test/"

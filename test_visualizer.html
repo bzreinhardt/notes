@@ -36,24 +36,95 @@ text {
 <body>
 <script src="https://d3js.org/d3.v3.min.js"></script>
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
+<input type="button" onclick="exportSelectedNodes()" value="Export Selected Notes" style="float: right;">
+<input type="button" onclick="hideUnselectedNodes()" value="Hide Unelected Notes" style="float: right;">
+<input type="button" onclick="showAllNodes()" value="Show all Nodes" style="float: right;">
+
 <script>
 
 // http://blog.thomsonreuters.com/index.php/mobile-patent-suits-graphic-of-the-day/
 //var links = [
 //  {source:"node 1", target:"node 2", type:"test"}
 //];
+
+
+
 var links = [];
+var nodes = {};
+var selectedNodes = [];
+
+function exportSelectedNodes() {
+  console.log("exporting nodes")
+  var exportName = "selected_nodes";
+  var exportObj = selectedNodes;
+  var dataStr =
+    'data:text/json;charset=utf-8,' +
+    encodeURIComponent(JSON.stringify(exportObj));
+  var downloadAnchorNode = document.createElement('a');
+  downloadAnchorNode.setAttribute('href', dataStr);
+  downloadAnchorNode.setAttribute('download', exportName + '.json');
+  document.body.appendChild(downloadAnchorNode);
+  downloadAnchorNode.click();
+  downloadAnchorNode.remove();
+}
+
+function getConnectedNodes(nodeName) {
+  unvisitedNodes = [nodeName];
+  visitedNodes = [];
+  while (unvisitedNodes.length > 0) {
+    var currentNode = unvisitedNodes.shift();
+    if (!visitedNodes.includes(currentNode)) {
+      visitedNodes.push(currentNode);
+    }
+
+    var edges = links.filter(function (el) {return el.source.name == currentNode || el.target.name == currentNode;})
+    for (var i=0; i < edges.length; i++) {
+      if (!visitedNodes.includes(edges[i].source.name)) {
+        unvisitedNodes.push(edges[i].source.name)
+      }
+      if (!visitedNodes.includes(edges[i].target.name)) {
+        unvisitedNodes.push(edges[i].target.name)
+      }
+    }
+  }
+  return visitedNodes;
+}
+
+function name2id(name) {
+  return "id"+name.replace(/\W/g,'_');
+}
+
+function hideUnselectedNodes() {
+  //https://stackoverflow.com/questions/44365926/hide-all-but-selected-connected-nodes-in-d3-v4-force-graph
+  var unselectedNodes = [];
+  for (var key in nodes) {
+    if (!selectedNodes.includes(nodes[key].name)){
+      unselectedNodes.push(nodes[key].name);
+      d3.select("#"+name2id(nodes[key].name)).style("visibility", "hidden");
+    }
+  }
+}
+
+function showAllNodes() {
+  var unselectedNodes = [];
+  for (var key in nodes) {
+    d3.select("#"+name2id(nodes[key].name)).style("visibility", "visible");
+  }
+}
+
 $.getJSON("https://api.myjson.com/bins/5yjbk", function(json) {
   links = json;
 }).then(function(){
 
-var nodes = {};
+
 
 // Compute the distinct nodes from the links.
 links.forEach(function(link) {
   link.source = nodes[link.source] || (nodes[link.source] = {name: link.source});
   link.target = nodes[link.target] || (nodes[link.target] = {name: link.target});
 });
+
+
 
 var width = window.innerWidth*1.1,
     height = window.innerHeight*1.1;
@@ -75,7 +146,7 @@ var svg = d3.select("body").append("svg")
 svg.append("defs").selectAll("marker")
     .data(["suit", "licensing", "resolved"])
   .enter().append("marker")
-    .attr("id", function(d) { return d; })
+    .attr("id", function(d) { return d })
     .attr("viewBox", "0 -5 10 10")
     .attr("refX", 15)
     .attr("refY", -1.5)
@@ -95,7 +166,24 @@ var circle = svg.append("g").selectAll("circle")
     .data(force.nodes())
   .enter().append("circle")
     .attr("r", 6)
+    .attr("id", function(d) {return name2id(d.name);})
     .call(force.drag);
+
+circle.on('click', function(datum) {
+  var connectedNodeNames = getConnectedNodes(datum.name);
+  if (!selectedNodes.includes(datum.name)) {
+    selectedNodes = connectedNodeNames;
+    for (var i = 0; i < connectedNodeNames.length; i++) {
+      d3.select("#"+name2id(connectedNodeNames[i])).style("fill", 'red');
+    }
+  } else {
+    selectedNodes = [];
+    for (var i = 0; i < connectedNodeNames.length; i++) {
+      d3.select("#"+name2id(connectedNodeNames[i])).style("fill", '#ccc');
+    }
+  }
+  console.log(selectedNodes);
+});
 
 var text = svg.append("g").selectAll("text")
     .data(force.nodes())
