@@ -52,6 +52,8 @@ text {
 var links = [];
 var nodes = {};
 var selectedNodes = [];
+var ticks = 0;
+var MAX_TICKS = 200;
 
 function exportSelectedNodes() {
   console.log("exporting nodes")
@@ -133,10 +135,13 @@ var force = d3.layout.force()
     .nodes(d3.values(nodes))
     .links(links)
     .size([width, height])
-    .linkDistance(60)
-    .charge(-300)
+    .linkDistance(40)
+    .linkStrength(10)
+    .charge(-100)
     .on("tick", tick)
     .start();
+
+
 
 var svg = d3.select("body").append("svg")
         .attr("viewBox", "0 0 " + width + " " + height )
@@ -194,9 +199,13 @@ var text = svg.append("g").selectAll("text")
 
 // Use elliptical arc path segments to doubly-encode directionality.
 function tick() {
-  path.attr("d", linkArc);
-  circle.attr("transform", transform);
-  text.attr("transform", transform);
+  if (ticks < MAX_TICKS){
+    path.attr("d", linkArc);
+    circle.attr("transform", transform);
+    text.attr("transform", transform);
+    ticks++;
+  }
+
 }
 
 function linkArc(d) {

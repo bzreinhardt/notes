@@ -22,6 +22,17 @@ def get_team_key(team_name):
             break
     return key
 
+def get_pipeline_list():
+    url = BASE_URL+"v1/pipelines"
+    response = requests.request("GET", url, headers=BASE_HEADERS)
+    print(response.text)
+    return response.json()
+
+def get_pipeline_names():
+    pipeline_list = get_pipeline_list()
+    names = [pipe['name'] for pipe in pipeline_list]
+    return names
+
 
 def get_pipeline_key(pipeline_name):
     url = BASE_URL+"v1/pipelines"
@@ -145,8 +156,6 @@ def process_note_contact(structured_note, pipeline_name="Parpa Research"):
             parameters['other']+="Nickname:%s "%val
         if type.lower() == "loc":
             parameters['addresses'].append(val)
-        if type.lower() == "pipeline":
-            pipeline_name = val
     #check if there's a box for the person
     results = query(name)
     box_created = False
@@ -178,7 +187,7 @@ def note_to_structure(content):
     note = {'title':'Untitled', 'values':[], 'sections':{'none':{'content':[]}}, 'tags':[]}
     current_heading = 'none'
     for line in content.split('\n'):
-        if len(line) < 1:
+        if len(line) < 2:
             continue
         if line[0] != "#":
             note['sections'][current_heading]['content'].append(line)
@@ -202,6 +211,8 @@ def note_to_structure(content):
 
 def main(directory):
     files = os.listdir(directory)
+    pipeline_names = get_pipeline_names()
+    pipeline_tags = [name.lower().replace(" ","-") for name in pipeline_names]
     for file in files:
         if not file.endswith(".md"):
             continue
@@ -209,9 +220,16 @@ def main(directory):
         with open (path, 'r') as f:
             content = f.read()
         structured_note = note_to_structure(content)
-        if 'Pipeline' not in [x['type'] for x in structured_note['values']]:
-            continue
-        process_note_contact(structured_note)
+        create_contact = False
+        pipeline = None
+        #check for pipeline value
+        pipeline = next((x for x in structured_note['values'] if x['type'] == 'Pipeline'), None)
+        #check for pipeline tag
+        if set(structured_note['tags']) & set(pipeline_tags):
+            #this complex line just grabs the pipeline name that corresponds to the tag that's present
+            pipeline = pipeline_names[pipeline_tags.index(list(set(structured_note['tags']) & set(pipeline_tags))[0])]
+        if pipeline is not None:
+            process_note_contact(structured_note, pipeline_name=pipeline)
 
 def test_note_to_pipeline(content):
     structured_note = note_to_structure(content)

@@ -9,6 +9,13 @@ def remove_contact_info(content):
             lines_out.append(line)
     return "\n".join(lines_out)
 
+def remove_comments(content):
+    lines = content.split("\n")
+    lines_out = []
+    for line in lines:
+        lines_out.append(line.split("//")[0])
+    return "\n".join(lines_out)
+
 def make_note_publishable(path):
     with open(path, 'r') as f:
         content = f.read()

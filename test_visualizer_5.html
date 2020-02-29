@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.links line {
+  stroke: #999;
+  stroke-opacity: 0.6;
+}
+
+.nodes circle {
+  stroke: black	;
+  stroke-width: 0px;
+}
+
+text {
+  font: 10px sans-serif;
+  pointer-events: none;
+  text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;
+}
+
+</style>
+<svg width="800" height="500"></svg>
+<input type="button" onclick="exportSelectedNodes()" value="Export Selected Notes" style="float: right;">
+<input type="button" onclick="hideUnselectedNodes()" value="Hide Unelected Notes" style="float: right;">
+<input type="button" onclick="showAllNodes()" value="Show all Nodes" style="float: right;">
+<input type="button" onclick="zoomFit(0.95, 500)" value="Fit" style="float: right;">
+
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
+
+<script>
+
+var selectedNodes = [];
+var nodes = {};
+var links = [];
+
+
+
+//create somewhere to put the force directed graph
+var svg = d3.select("svg"),
+    width = +svg.attr("width"),
+    height = +svg.attr("height");
+
+var root = svg.select('#root');
+var radius = 15;
+var g = svg.append("g")
+    .attr("class", "everything")
+    .attr("id","root");
+
+//Zoom functions
+function zoom_actions(){
+    g.attr("transform", d3.event.transform)
+}
+
+//add zoom capabilities
+var zoom = d3.zoom()
+    .on("zoom", zoom_actions);
+
+zoom(svg);
+
+
+function reset() {
+  svg.transition()
+      .duration(750)
+      // .call( zoom.transform, d3.zoomIdentity.translate(0, 0).scale(1) ); // not in d3 v4
+      .call( zoom.transform, d3.zoomIdentity );
+}
+
+function name2id(name) {
+  return "id"+name.replace(/\W/g,'_');
+}
+
+function link2id(link) {
+
+  return "id"+String(link.source.name.replace(/\W/g,'_'))+"-"+String(link.target.name.replace(/\W/g,'_'));
+}
+
+function nodeText2id(node) {
+  name = node.name;
+  return "id"+name.replace(/\W/g,'_')+"_text";
+}
+
+
+
+
+function transform(d) {
+  return "translate(" + d.x + "," + d.y + ")";
+}
+
+//Zoom to box around nodes:
+//https://bl.ocks.org/iamkevinv/0a24e9126cd2fa6b283c6f2d774b69a2
+
+function zoomFit(paddingPercent, transitionDuration) {
+  var root = svg.select('#root');
+	var bounds = root.node().getBBox();
+	var parent = root.node().parentElement;
+	var fullWidth = parent.clientWidth,
+	    fullHeight = parent.clientHeight;
+	var width = bounds.width,
+	    height = bounds.height;
+	var midX = bounds.x + width / 2,
+	    midY = bounds.y + height / 2;
+	if (width == 0 || height == 0) return; // nothing to fit
+	var scale = (paddingPercent || 0.75) / Math.max(width / fullWidth, height / fullHeight);
+	var translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
+
+	console.log("zoomFit", translate, scale);
+	svg.transition()
+		.duration(transitionDuration || 0) // milliseconds
+		.call(zoom.transform, d3.zoomIdentity.translate(translate[0],translate[1]).scale(scale) );
+}
+
+
+function getConnectedNodes(nodeName, links) {
+  unvisitedNodes = [nodeName];
+  visitedNodes = [];
+  while (unvisitedNodes.length > 0) {
+    var currentNode = unvisitedNodes.shift();
+    if (!visitedNodes.includes(currentNode)) {
+      visitedNodes.push(currentNode);
+    }
+    var edges = links.filter(function (el) {return el.source.name == currentNode || el.target.name == currentNode;})
+    for (var i=0; i < edges.length; i++) {
+      if (!visitedNodes.includes(edges[i].source.name)) {
+        unvisitedNodes.push(edges[i].source.name)
+      }
+      if (!visitedNodes.includes(edges[i].target.name)) {
+        unvisitedNodes.push(edges[i].target.name)
+      }
+    }
+  }
+  return visitedNodes;
+}
+
+function hideUnselectedNodes() {
+  //https://stackoverflow.com/questions/44365926/hide-all-but-selected-connected-nodes-in-d3-v4-force-graph
+  var unselectedNodes = [];
+  for (var key in nodes) {
+    if (!selectedNodes.includes(nodes[key].name)){
+      unselectedNodes.push(nodes[key].name);
+      d3.select("#"+name2id(nodes[key].name)).style("visibility", "hidden");
+      d3.select("#"+nodeText2id(nodes[key])).style("visibility", "hidden");
+      for (var i = 0; i < nodes[key].in_links.length; i++) {
+        d3.select("#"+link2id(nodes[key].in_links[i])).style("visibility", "hidden");
+      }
+    }
+  }
+}
+
+function showAllNodes() {
+  var unselectedNodes = [];
+  for (var key in nodes) {
+    d3.select("#"+name2id(nodes[key].name)).style("visibility", "visible");
+    d3.select("#"+nodeText2id(nodes[key])).style("visibility", "visible");
+    for (var i = 0; i < nodes[key].in_links.length; i++) {
+      d3.select("#"+link2id(nodes[key].in_links[i])).style("visibility", "visible");
+    }
+  }
+}
+
+$.getJSON("https://api.myjson.com/bins/5yjbk", function(json) {
+  links_data = json;
+}).then(function(){
+// Compute the distinct nodes from the links.
+  nodes_data = [];
+  links_data.forEach(function(link) {
+    if (nodes[link.source] == undefined) {
+      nodes[link.source] = {name: link.source, in_links:[]}
+    }
+
+    if (nodes[link.target] !== undefined) {
+      nodes[link.target].in_links.push(link)
+    } else {
+      nodes[link.target] = {name: link.target, in_links:[link]}
+    }
+    //link.source = nodes[link.source] || (nodes[link.source] = {name: link.source});
+    //link.target = nodes[link.target] || (nodes[link.target] = {name: link.target});
+  });
+  for (var key in nodes) {
+      nodes_data.push(nodes[key])
+  }
+
+
+//set up the simulation and add forces
+var simulation = d3.forceSimulation()
+					.nodes(nodes_data);
+
+var link_force =  d3.forceLink(links_data)
+                        .id(function(d) { return d.name; });
+
+var charge_force = d3.forceManyBody()
+    .strength(-100);
+
+var center_force = d3.forceCenter(width / 2, height / 2);
+
+
+simulation
+    .force("charge_force", charge_force)
+    .force("center_force", center_force)
+    .force("links",link_force)
+ ;
+
+
+//add tick instructions:
+simulation.on("tick", tickActions );
+
+//add encompassing group for the zoom
+
+
+//draw lines for the links
+var link = g.append("g")
+      .attr("class", "links")
+      .selectAll("line")
+      .data(links_data)
+      .enter().append("line")
+      .attr("stroke-width", 2)
+      .style("stroke", linkColour)
+      .attr("id", function(d){return link2id(d)});
+
+//draw circles for the nodes
+var node = g.append("g")
+        .attr("class", "nodes")
+        .selectAll("circle")
+        .data(nodes_data)
+        .enter()
+        .append("circle")
+        .attr("r", radius)
+        .attr("fill", circleColour)
+        .attr("id", function(d) {return name2id(d.name);});
+
+var text = g.selectAll("text")
+    .data(nodes_data)
+    .enter().append("text")
+    .attr("x", 8)
+    .attr("y", ".31em")
+    .text(function(d) { return d.name; })
+    .attr("id", function(d){return nodeText2id(d)});
+
+
+
+
+
+//add drag capabilities
+var drag_handler = d3.drag()
+	.on("start", drag_start)
+	.on("drag", drag_drag)
+	.on("end", drag_end);
+
+drag_handler(node);
+
+
+
+
+/** Functions **/
+
+//Function to choose what color circle we have
+//Let's return blue for males and red for females
+function circleColour(d){
+	if(d.sex =="M"){
+		return "blue";
+	} else {
+		return "pink";
+	}
+}
+
+//Function to choose the line colour and thickness
+//If the link type is "A" return green
+//If the link type is "E" return red
+function linkColour(d){
+	if(d.type == "A"){
+		return "green";
+	} else {
+		return "red";
+	}
+}
+
+//Drag functions
+//d is the node
+function drag_start(d) {
+ if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+//make sure you can't drag the circle outside the box
+function drag_drag(d) {
+  d.fx = d3.event.x;
+  d.fy = d3.event.y;
+}
+
+function drag_end(d) {
+  if (!d3.event.active) simulation.alphaTarget(0);
+  d.fx = null;
+  d.fy = null;
+}
+
+
+
+function tickActions() {
+    //update circle positions each tick of the simulation
+       node
+        .attr("cx", function(d) { return d.x; })
+        .attr("cy", function(d) { return d.y; });
+
+    //update link positions
+    link
+        .attr("x1", function(d) { return d.source.x; })
+        .attr("y1", function(d) { return d.source.y; })
+        .attr("x2", function(d) { return d.target.x; })
+        .attr("y2", function(d) { return d.target.y; });
+
+    text.attr("transform", transform);
+}
+
+g.selectAll("circle").on('click', function(datum) {
+        var connectedNodeNames = getConnectedNodes(datum.name, links_data);
+        if (!selectedNodes.includes(datum.name)) {
+          selectedNodes = connectedNodeNames;
+          for (var i = 0; i < connectedNodeNames.length; i++) {
+            d3.select("#"+name2id(connectedNodeNames[i])).style("fill", 'red');
+          }
+        } else {
+          selectedNodes = [];
+          for (var i = 0; i < connectedNodeNames.length; i++) {
+            d3.select("#"+name2id(connectedNodeNames[i])).style("fill", '#ccc');
+          }
+        }
+        console.log('foo');
+      });
+});
+</script>

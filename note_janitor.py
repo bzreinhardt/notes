@@ -44,6 +44,8 @@ def remove_extra_titles(content):
     lines = content.split("\n")
     new_lines = []
     title = lines[0]
+    if len(title) == 0:
+        return content
     if title[0] == '#':
         for i, line in enumerate(lines):
             if line != title:
