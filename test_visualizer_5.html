@@ -24,6 +24,7 @@ text {
 <input type="button" onclick="hideUnselectedNodes()" value="Hide Unelected Notes" style="float: right;">
 <input type="button" onclick="showAllNodes()" value="Show all Nodes" style="float: right;">
 <input type="button" onclick="zoomFit(0.95, 500)" value="Fit" style="float: right;">
+<input type="button" onclick="zoomSelected()" value="ZoomSelexted" style="float: right;">
 
 <script src="https://d3js.org/d3.v4.min.js"></script>
 <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
@@ -103,11 +104,47 @@ function zoomFit(paddingPercent, transitionDuration) {
 	if (width == 0 || height == 0) return; // nothing to fit
 	var scale = (paddingPercent || 0.75) / Math.max(width / fullWidth, height / fullHeight);
 	var translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
-
-	console.log("zoomFit", translate, scale);
 	svg.transition()
 		.duration(transitionDuration || 0) // milliseconds
 		.call(zoom.transform, d3.zoomIdentity.translate(translate[0],translate[1]).scale(scale) );
+}
+
+function zoomSelected() {
+  var selected = d3.selectAll("circle.selected").nodes();
+  var xmax=0;
+  var xmin=0;
+  var ymax=0;
+  var ymin=0;
+  for (var i = 0; i<selected.length; i++) {
+    var bbox = selected[i].getBBox();
+    if (bbox.x < xmin) {
+      xmin = bbox.x;
+    }
+    if (bbox.x > xmax) {
+      xmax = bbox.x;
+    }
+    if (bbox.y < ymin) {
+      ymin = bbox.y;
+    }
+    if (bbox.y > ymax) {
+      ymax = bbox.y;
+    }
+  }
+  var bounds = {width:xmax-xmin, height:ymax-ymin, x:xmin, y:ymin}
+  var root = svg.select('#root');
+  var parent = root.node().parentElement;
+  var fullWidth = parent.clientWidth,
+	    fullHeight = parent.clientHeight;
+  var width = bounds.width,
+      height = bounds.height;
+  var midX = bounds.x + width / 2,
+      midY = bounds.y + height / 2;
+  if (width == 0 || height == 0) return; // nothing to fit
+  var scale = .95 / Math.max(width / fullWidth, height / fullHeight);
+  var translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
+  svg.transition()
+    .duration(500) // milliseconds
+    .call(zoom.transform, d3.zoomIdentity.translate(translate[0],translate[1]).scale(scale) );
 }
 
 
@@ -133,35 +170,17 @@ function getConnectedNodes(nodeName, links) {
 }
 
 function hideUnselectedNodes() {
-  //https://stackoverflow.com/questions/44365926/hide-all-but-selected-connected-nodes-in-d3-v4-force-graph
-  var unselectedNodes = [];
-  for (var key in nodes) {
-    if (!selectedNodes.includes(nodes[key].name)){
-      unselectedNodes.push(nodes[key].name);
-      d3.select("#"+name2id(nodes[key].name)).style("visibility", "hidden");
-      d3.select("#"+nodeText2id(nodes[key])).style("visibility", "hidden");
-      for (var i = 0; i < nodes[key].in_links.length; i++) {
-        d3.select("#"+link2id(nodes[key].in_links[i])).style("visibility", "hidden");
-      }
-    }
-  }
+  d3.selectAll(".unselected").style("visibility","hidden");
 }
 
 function showAllNodes() {
-  var unselectedNodes = [];
-  for (var key in nodes) {
-    d3.select("#"+name2id(nodes[key].name)).style("visibility", "visible");
-    d3.select("#"+nodeText2id(nodes[key])).style("visibility", "visible");
-    for (var i = 0; i < nodes[key].in_links.length; i++) {
-      d3.select("#"+link2id(nodes[key].in_links[i])).style("visibility", "visible");
-    }
-  }
+  d3.selectAll('text').style("visibility", "visible");
+  d3.selectAll('line').style("visibility", "visible");
+  d3.selectAll('circle').style("visibility", "visible");
 }
 
-$.getJSON("https://api.myjson.com/bins/5yjbk", function(json) {
-  links_data = json;
-}).then(function(){
-// Compute the distinct nodes from the links.
+function noteJsonToNodesAndLinks(json) {
+  var links_data = json;
   nodes_data = [];
   links_data.forEach(function(link) {
     if (nodes[link.source] == undefined) {
@@ -173,12 +192,19 @@ $.getJSON("https://api.myjson.com/bins/5yjbk", function(json) {
     } else {
       nodes[link.target] = {name: link.target, in_links:[link]}
     }
-    //link.source = nodes[link.source] || (nodes[link.source] = {name: link.source});
-    //link.target = nodes[link.target] || (nodes[link.target] = {name: link.target});
   });
   for (var key in nodes) {
       nodes_data.push(nodes[key])
   }
+  return {nodes_data:nodes_data, links_data:links_data}
+}
+
+$.getJSON("https://api.myjson.com/bins/5yjbk", function(json) {
+  data = noteJsonToNodesAndLinks(json);
+}).then(function(){
+// Compute the distinct nodes from the links.
+  links_data = data.links_data;
+  nodes_data = data.nodes_data;
 
 
 //set up the simulation and add forces
@@ -312,20 +338,29 @@ function tickActions() {
     text.attr("transform", transform);
 }
 
+
 g.selectAll("circle").on('click', function(datum) {
-        var connectedNodeNames = getConnectedNodes(datum.name, links_data);
-        if (!selectedNodes.includes(datum.name)) {
-          selectedNodes = connectedNodeNames;
-          for (var i = 0; i < connectedNodeNames.length; i++) {
-            d3.select("#"+name2id(connectedNodeNames[i])).style("fill", 'red');
-          }
-        } else {
-          selectedNodes = [];
-          for (var i = 0; i < connectedNodeNames.length; i++) {
-            d3.select("#"+name2id(connectedNodeNames[i])).style("fill", '#ccc');
-          }
+    var connectedNodeNames = getConnectedNodes(datum.name, links_data);
+    if (!selectedNodes.includes(datum.name)) {
+      d3.selectAll('text').attr("class", "unselected");
+      d3.selectAll('line').attr("class", "unselected");
+      d3.selectAll('circle').attr("class", "unselected");
+      selectedNodes = connectedNodeNames;
+      for (var i = 0; i < connectedNodeNames.length; i++) {
+        name = connectedNodeNames[i];
+        d3.select("#"+name2id(name)).attr("class","selected").style("fill", 'red');
+        d3.select("#"+nodeText2id(nodes[name])).attr("class","selected");
+        for (var j = 0; j < nodes[name].in_links.length; j++) {
+          d3.select("#"+link2id(nodes[name].in_links[j])).attr("class","selected");
         }
-        console.log('foo');
-      });
+      }
+    } else {
+      selectedNodes = [];
+      d3.selectAll(".selected").attr("class","unselected").style("fill","#ccc");
+      //for (var i = 0; i < connectedNodeNames.length; i++) {
+      //  d3.select("#"+name2id(connectedNodeNames[i])).style("fill", '#ccc');
+      //}
+    }
+  });
 });
 </script>
