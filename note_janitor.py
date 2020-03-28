@@ -46,26 +46,28 @@ def get_note_url(baseurl, clean_note_title):
 
 def add_web_url(baseurl, path, content):
     url = get_note_url(baseurl, os.path.basename(path)[:-3])
-    # This line just makes sure there's only one URL per note
-    content = re.sub(r'\[Web URL for this note]\((.*?)\n', '', content)
-    backlink_index = content.find('## Backlinks')
-    note_id_index = content.find('<!-- {Bear')
-    if backlink_index > -1:
-        content_out = content[0:backlink_index] + "\n[Web URL for this note](%s)\n\n"%url + content[backlink_index:]
+    if content.find("Web URL for this note") > -1:
+        content_out = re.sub(r'\[Web URL for this note]\((.*?)\n', "[Web URL for this note](%s)\n"%url, content)
     else:
-        content_out = content[0:note_id_index] + "\n[Web URL for this note](%s)\n\n"%url + content[note_id_index:]
+        backlink_index = content.find('## Backlinks')
+        note_id_index = content.find('<!-- {Bear')
+        if backlink_index > -1:
+            content_out = content[0:backlink_index] + "[Web URL for this note](%s)\n\n"%url + content[backlink_index:]
+        else:
+            content_out = content[0:note_id_index] + "[Web URL for this note](%s)\n\n"%url + content[note_id_index:]
     return content_out
 
 def add_annotate_url(baseurl, path, content):
     annotate_url = "https://via.hypothes.is/" + get_note_url(baseurl, os.path.basename(path)[:-3])
-    content = re.sub(r'\[Comment on this note]\((.*?)\n', '', content)
-
-    backlink_index = content.find('## Backlinks')
-    note_id_index = content.find('<!-- {Bear')
-    if backlink_index > -1:
-        content_out = content[0:backlink_index] + "\n[Comment on this note](%s)\n\n"%annotate_url + content[backlink_index:]
+    if content.find("Comment on this note") > -1:
+        content_out = re.sub(r'\[Comment on this note]\((.*?)\n', "[Comment on this note](%s)\n"%annotate_url, content)
     else:
-        content_out = content[0:note_id_index] + "\n[Comment on this note](%s)\n\n"%annotate_url + content[note_id_index:]
+        backlink_index = content.find('## Backlinks')
+        note_id_index = content.find('<!-- {Bear')
+        if backlink_index > -1:
+            content_out = content[0:backlink_index] + "\n[Comment on this note](%s)\n\n"%annotate_url + content[backlink_index:]
+        else:
+            content_out = content[0:note_id_index] + "\n[Comment on this note](%s)\n\n"%annotate_url + content[note_id_index:]
     return content_out
 
 def hide_tags(md_text):
@@ -132,10 +134,6 @@ def process_note(path, no_backlinks=False, return_links=False):
     content_out = remove_excessive_newlines(content_out)
     if no_backlinks:
         content_out = remove_backlinks(content_out)
-    content_out = remove_titles(content_out)
-    if content_out != content:
-        with open(path, 'w') as f:
-            f.write(content_out)
     if return_links:
         return get_links(content_out, os.path.basename(path)[:-3])
     else:
@@ -196,7 +194,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('dir')
     parser.add_argument('--pub', action="store_true")
-    parser.add_argument('--note')
+    parser.add_argument('--note', action="store_true")
     parser.add_argument('--rl', action="store_true")
     parser.add_argument('--upload', action="store_true")
     parsed_args = vars(parser.parse_args())
@@ -204,7 +202,6 @@ if __name__ == "__main__":
     if parsed_args.get("pub"):
         make_dir_publishable(directory)
     if parsed_args.get("note"):
-        path = os.path.abspath(parsed_args.get("note"))
-        process_note(path, no_backlinks=parsed_args.get("rl"))
+        process_note(directory, no_backlinks=parsed_args.get("rl"))
     else:
         main(directory, no_backlinks=parsed_args.get("rl"), upload_links=parsed_args.get("upload"))
