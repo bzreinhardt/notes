@@ -78,15 +78,18 @@ def get_note_bodies(directory):
 
 
 
-def main(directory, root_note, get_bodies=False, link_note=True, outfile=None):
+def main(root_note, get_bodies=False, link_note=True, outfile=None):
+    directory = os.path.dirname(root_note)
+    with open(root_note) as f:
+        root_title = get_title(f.read())
     graph = create_graph_from_dir(directory)
     if get_bodies:
         bodies = get_note_bodies(directory)
-        outline, added_notes = create_outline_from_note(graph, root_note, bodies=bodies, link_note=link_note)
+        outline, added_notes = create_outline_from_note(graph, root_title, bodies=bodies, link_note=link_note)
     else:
-        outline, added_notes = create_outline_from_note(graph, root_note, link_note=link_note)
+        outline, added_notes = create_outline_from_note(graph, root_title, link_note=link_note)
     if not outfile:
-        out_file = os.path.join(directory, "_".join(root_note.split(" "))+"_outline.md")
+        out_file = os.path.join(directory, os.path.basename(root_note)[0:-3] + " outline.md")
     else:
         out_file = outfile
     out_content = "# " + root_note + " outline\n" + outline
@@ -96,14 +99,13 @@ def main(directory, root_note, get_bodies=False, link_note=True, outfile=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('dir')
     parser.add_argument('root')
     parser.add_argument('--bodies', action="store_true")
     parser.add_argument('--nolinks', action="store_false")
     parser.add_argument('--outfile', default=None)
     parsed_args = vars(parser.parse_args())
-    directory = os.path.abspath(parsed_args.get("dir"))
-    main(directory, parsed_args.get("root"),
+    directory = os.path.abspath(parsed_args.get("root"))
+    main(parsed_args.get("root"),
         get_bodies=parsed_args.get("bodies"),
         link_note=parsed_args.get("nolinks"),
         outfile=parsed_args.get("outfile"))
