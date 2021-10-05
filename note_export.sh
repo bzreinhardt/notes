@@ -8,19 +8,23 @@ PUBLISH_SCRIPT=$HOME/Projects/Notes/notetools/note_publisher.py
 NOTETOWER=$HOME/Projects/Notes/notetower
 NOTE_SITE=$HOME/Projects/Notes/note-site
 
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+pyenv activate notes-37
 source ~/.bash_profile
 echo "doing first export"
 python $EXPORT_SCRIPT
 echo "running link janitor"
 rm $EXPORT_LOCATION/Untitled.md
 nvm use 12
-# note-link-janitor $EXPORT_LOCATION
+note-link-janitor $EXPORT_LOCATION
 echo "running clean script"
 python $CLEAN_SCRIPT $EXPORT_LOCATION
 echo "running sync"
 python $EXPORT_SCRIPT
-cp $EXPORT_LOCATION $WEB_NOTES
+rsync -r $EXPORT_LOCATION/ $WEB_NOTES/
 python $PUBLISH_SCRIPT $WEB_NOTES
 cd $NOTETOWER
 nvm use 10
 yarn run updateNotes
+pyenv deactivate

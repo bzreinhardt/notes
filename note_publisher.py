@@ -13,13 +13,20 @@ def remove_comments(content):
     lines = content.split("\n")
     lines_out = []
     for line in lines:
-        lines_out.append(line.split("//")[0])
+        if "//" in line:
+            if line[line.find("//")-1] != ":":
+                lines_out.append(line.split("//")[0])
+            else:
+                lines_out.append(line)
+        else:
+            lines_out.append(line)
     return "\n".join(lines_out)
 
 def make_note_publishable(path):
     with open(path, 'r') as f:
         content = f.read()
     content_out = remove_contact_info(content)
+    content_out = remove_comments(content_out)
     if content_out != content:
         with open(path, 'w') as f:
             f.write(content_out)

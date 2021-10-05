@@ -3,8 +3,9 @@ import os
 import re
 import json
 import requests
+from subprocess import Popen, PIPE
 
-BASE_URL = "https://notes.benjaminreinhardt.com"
+BASE_URL = "http://notes.benjaminreinhardt.com"
 JSON_BIN = "https://api.jsonbin.io/b/5e5ca0e4e68645052627e710"
 
 
@@ -13,7 +14,13 @@ def get_creation_and_modification(path):
     created = datetime.fromtimestamp(os.stat(path).st_birthtime)
     modified = datetime.fromtimestamp(os.path.getmtime(path))
 
-
+def clean_title(title):
+    title = title[:256].strip()
+    if title == "":
+        title = "Untitled"
+    title = re.sub(r'[/\\*?$@!^&\|~:\.%]', r'-', title)
+    title = re.sub(r'-$', r'', title)
+    return title.strip()
 
 
 def remove_backlinks(content):
@@ -40,12 +47,33 @@ def remove_extra_tags(content):
         return content
 
 
-def get_note_url(baseurl, clean_note_title):
-    return baseurl + "/" + clean_note_title.replace(" ","_")
+def get_title(content):
+    lines = content.split("\n")
+    title = lines[0]
+    if len(title) == 0:
+        print("no title for note with second line %s"%lines[1])
+        return None
+    if title[0] == '#':
+        title = title[1:].strip()
+    else:
+        title = None
+        print("no title for note with second line %s"%lines[1])
+    return title
+
+def get_note_url(content):
+    title = get_title(content)
+    if not title:
+        return None
+    clean_note_title = clean_title(title)
+    url = BASE_URL + "/" + clean_note_title.replace(" ","_")
+    if url.endswith(")"):
+        url = url + " "
+    return url
 
 
-def add_web_url(baseurl, path, content):
-    url = get_note_url(baseurl, os.path.basename(path)[:-3])
+def add_web_url(content):
+    url = get_note_url(content)
+
     if content.find("Web URL for this note") > -1:
         content_out = re.sub(r'\[Web URL for this note]\((.*?)\n', "[Web URL for this note](%s)\n"%url, content)
     else:
@@ -57,8 +85,8 @@ def add_web_url(baseurl, path, content):
             content_out = content[0:note_id_index] + "[Web URL for this note](%s)\n\n"%url + content[note_id_index:]
     return content_out
 
-def add_annotate_url(baseurl, path, content):
-    annotate_url = "https://via.hypothes.is/" + get_note_url(baseurl, os.path.basename(path)[:-3])
+def add_annotate_url(content):
+    annotate_url = "http://via.hypothes.is/" + get_note_url(content)
     if content.find("Comment on this note") > -1:
         content_out = re.sub(r'\[Comment on this note]\((.*?)\n', "[Comment on this note](%s)\n"%annotate_url, content)
     else:
@@ -70,6 +98,12 @@ def add_annotate_url(baseurl, path, content):
             content_out = content[0:note_id_index] + "\n[Comment on this note](%s)\n\n"%annotate_url + content[note_id_index:]
     return content_out
 
+def remove_urls(content):
+    content = re.sub(r'\[Comment on this note]\((.*?)\n', "", content)
+    content = re.sub(r'\[Web URL for this note]\((.*?)\n', "", content)
+    return content
+
+
 def hide_tags(md_text):
     # Hide tags from being seen as H1, by placing `period+space` at start of line:
     md_text =  re.sub(r'(\n)[ \t]*(\#[^\s#].*)', r'\1<!-- \2 -->', md_text)
@@ -79,14 +113,6 @@ def remove_comments(md_text):
     md_text = re.sub(r'<!--(.*?)-->','', md_text)
     return md_text
 
-def get_title(content):
-    lines = content.split("\n")
-    title = lines[0]
-    if title[0] == '#':
-        title = title[1:].strip()
-    else:
-        title = None
-    return title
 
 def get_body(content, ignore_backlinks=True, ignore_hashtags=True):
     content = content.split("## Backlinks")[0]
@@ -101,14 +127,42 @@ def remove_titles(content):
     lines = content.split("\n")
     title = lines[0]
     new_lines = []
-    if len(title) == 0:
+    if len(title) == 0 or title[0] != '#':
         return content
-    if title[0] == '#':
-        for i, line in enumerate(lines):
-            if line != title:
-                new_lines.append(line)
+    duplicated_title = False
+
+    for i, line in enumerate(lines):
+        if i != 0 and line != title:
+            new_lines.append(line)
+        if i != 0 and line == title:
+            print("found duplicated line")
+            duplicated_title = True
+            continue
+    if not duplicated_title:
+        new_lines = [title] + new_lines
+
     content_out = '\n'.join(new_lines)
     return content_out
+
+def grab_todo(content):
+    lines = content.split("\n")
+    title = get_title(content)
+    lines_out = []
+    for line in lines:
+
+        if line.lower().find("todo:") > -1:
+            if len(line.lower().split("todo:")) > 1:
+                todo = line.lower().split("todo:")[1]
+                todo = todo + " from Bear Note %s"%title
+                ##tag1 #tag2 name [project/area] ::note >duedate
+                script = 'tell application "Things3.app"\n\
+                            set newToDo to make new to do with properties {name:"%s"}\n\
+                          end tell\n'%todo
+                p = Popen(['osascript', '-'], stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+                stdout, stderr = p.communicate(script)
+        else:
+            lines_out.append(line)
+    return "\n".join(lines_out)
 
 
 def remove_excessive_newlines(content):
@@ -129,11 +183,16 @@ def get_links(content, title, ignore_backlinks=True):
 def process_note(path, no_backlinks=False, return_links=False):
     with open(path, 'r') as f:
         content = f.read()
-    content_out = add_web_url(BASE_URL, path, content)
-    content_out = add_annotate_url(BASE_URL, path, content_out)
+    content_out = add_web_url(content)
+    content_out = add_annotate_url(content_out)
     content_out = remove_excessive_newlines(content_out)
+    content_out = grab_todo(content_out)
+    content_out = remove_titles(content_out)
     if no_backlinks:
         content_out = remove_backlinks(content_out)
+    if content_out != content:
+        with open(path, 'w') as f:
+            f.write(content_out)
     if return_links:
         return get_links(content_out, os.path.basename(path)[:-3])
     else:
@@ -157,9 +216,6 @@ def get_orphans(links):
             orphans.append(node)
 
 def upload_graph(data):
-    print("data length = %d"%len(data))
-    print("offdending data:")
-    print(data[3977])
     json_data = json.dumps([data])
     with open('json_links.json', 'w') as f:
         f.write(json_data)
